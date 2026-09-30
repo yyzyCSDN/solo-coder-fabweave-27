@@ -1,16 +1,27 @@
 from __future__ import annotations
 
 
-def excursion_periods(readings: list[tuple[int, float]], limit: float, min_consecutive: int) -> list[tuple[int, int]]:
-    if min_consecutive <= 0:
-        raise ValueError("min_consecutive must be positive")
+def ordered_timeline(readings: list[tuple[int, float]]) -> list[tuple[int, float]]:
+    """Collapse readings onto their event-time timeline.
+
+    Readings may arrive out of order, but hysteresis must follow event time,
+    not arrival order. Repeated readings at the same event time are idempotent;
+    distinct values at the same event time are an ambiguous conflict and are
+    rejected instead of being resolved by arrival order.
+    """
     by_time: dict[int, float] = {}
     for timestamp, value in readings:
         previous = by_time.get(timestamp)
         if previous is not None and previous != value:
             raise ValueError("conflicting readings at the same event time")
         by_time[timestamp] = value
-    ordered = sorted(by_time.items())
+    return sorted(by_time.items())
+
+
+def excursion_periods(readings: list[tuple[int, float]], limit: float, min_consecutive: int) -> list[tuple[int, int]]:
+    if min_consecutive <= 0:
+        raise ValueError("min_consecutive must be positive")
+    ordered = ordered_timeline(readings)
     out: list[tuple[int, int]] = []
     start: int | None = None
     count = 0
@@ -39,7 +50,7 @@ def active_excursion(
         raise ValueError("invalid hysteresis policy")
     active = False
     run = 0
-    for _, value in readings:
+    for _, value in ordered_timeline(readings):
         if not active:
             run = run + 1 if value > open_limit else 0
             if run >= required_open:

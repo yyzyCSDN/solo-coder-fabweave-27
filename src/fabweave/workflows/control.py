@@ -155,8 +155,11 @@ def environmental_containment(
     material_classes: set[str],
     contamination_matrix: dict[str, set[str]],
 ) -> Decision:
-    considered = readings[-(required_open + required_close) :]
-    excursion = active_excursion(considered, open_limit, close_limit, required_open, required_close)
+    # Evaluate the full event timeline: an excursion that opened on an older,
+    # still-valid reading must not be hidden by trimming to recent arrivals.
+    # active_excursion replays event time, deduplicates repeats and rejects
+    # same-timestamp conflicts.
+    excursion = active_excursion(readings, open_limit, close_limit, required_open, required_close)
     pairs = incompatible_pairs(material_classes, contamination_matrix)
     reasons = [*(("cleanroom_excursion",) if excursion else ()), *(f"incompatible:{left}:{right}" for left, right in pairs)]
     return deny(*reasons, active_excursion=excursion, incompatible_pairs=pairs) if reasons else allow(active_excursion=False, incompatible_pairs=())
