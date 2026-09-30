@@ -205,6 +205,34 @@ def test_cleanroom_event_time_dedup_and_hysteresis():
         excursion_periods([(1, 5), (1, 6)], 4, 1)
 
 
+def test_hysteresis_uses_event_time_not_arrival_order_and_dedups_readings():
+    # Readings 1/2 open the excursion, 3/4 close it; the tail arrives first.
+    assert not active_excursion([(4, 3), (3, 3), (2, 6), (1, 6)], 5, 4, 2, 2)
+    # The same event time replayed must not count twice toward the close run.
+    assert active_excursion([(1, 6), (2, 6), (3, 3), (3, 3)], 5, 4, 2, 2)
+    # ...and a replayed open reading must not open the excursion by itself.
+    assert not active_excursion([(1, 6), (1, 6), (2, 3), (3, 3)], 5, 4, 2, 2)
+    with pytest.raises(ValueError):
+        active_excursion([(1, 5), (1, 6)], 5, 4, 1, 1)
+
+
+def test_environmental_containment_uses_full_timeline_and_keeps_material_gate():
+    # The excursion opens at 1-2 and stays open: later readings sit in the
+    # hysteresis band. Arrival order is shuffled to emulate late readings.
+    late = [(3, 5), (2, 6), (6, 5), (1, 6), (5, 5), (4, 5)]
+    decision = environmental_containment(late, 5, 4, 2, 2, set(), {})
+    assert decision.reasons == ("cleanroom_excursion",)
+    assert decision.evidence["active_excursion"]
+    # Same-timestamp conflicts remain an explicit rejection.
+    with pytest.raises(ValueError):
+        environmental_containment([(1, 6), (1, 3)], 5, 4, 1, 1, set(), {})
+    # Material risk is judged jointly and reported without an excursion too.
+    material_only = environmental_containment([(1, 1), (2, 1)], 5, 4, 2, 2, {"CU", "FE"}, {"CU": {"FE"}})
+    assert material_only.reasons == ("incompatible:CU:FE",)
+    combined = environmental_containment(late, 5, 4, 2, 2, {"CU", "FE"}, {"CU": {"FE"}})
+    assert combined.reasons == ("cleanroom_excursion", "incompatible:CU:FE")
+
+
 def test_coincident_demand_groups_timestamps_and_uses_half_open_window():
     loads = [(0, 2), (5, 3), (5, 4), (10, 7)]
     assert coincident_peak(loads, 10) == 14
